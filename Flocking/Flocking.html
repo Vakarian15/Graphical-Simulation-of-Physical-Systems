@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang='en'>
+  <head>
+    <style>body{ margin:0 }</style>
+  </head>
+  <body>
+    <canvas id='gl'></canvas>
+  </body>
+  <script src="tweakpane-1.5.6.min.js"></script>
+
+  <!-- vertex shader, as simple as possible -->
+  <script id='vs_simulation' type='x-shader/x-vertex'>#version 300 es
+    precision mediump float; 
+    in vec2 a_position; 
+
+    void main() { 
+      gl_Position = vec4( a_position, 0, 1.0); 
+    } 
+  </script>
+
+  <!-- fragment shader -->
+  <script id='fs_simulation' type='x-shader/x-fragment'>#version 300 es
+    precision mediump float;
+    
+    
+    uniform sampler2D posTexture; //xy is postion
+    uniform sampler2D velTexture; //xy is velocity
+    uniform vec2 scale;
+    uniform vec2 mousePos;
+    //UI
+  
+    uniform float alignmentScale;
+    uniform float cohesionScale;
+    uniform float separationScale;
+
+    uniform bool bmousePredator;
+ 
+    float maxForce=0.001;
+    float maxSpeed=0.01;
+
+    
+    layout(location = 0) out vec4 o_newPos;
+    layout(location = 1) out vec4 o_newVel;
+    
+    
+    vec2 align(vec4 currentPos, vec4 currentVel)
+    {
+        float d = 0.2;
+        vec2 totalVelocity = vec2(0);
+        vec2 acc = vec2(0);
+        float num = 0.0;
+        for (float y = 0.0; y < scale.y; y++)
+        {
+          for (float x = 0.0; x < scale.x; x++) 
+          { 
+            vec2 neighborUV = vec2(x+0.5, y+0.5)/scale.xy;
+            vec4 neighborPos = texture( posTexture, neighborUV);
+            float distance = length(currentPos.xy - neighborPos.xy);
+            if(currentPos.xy!= neighborPos.xy && distance <= d)
+            {
+              totalVelocity += texture( velTexture, neighborUV).xy;
+              num++;
+            }
+          }
+        }
+        if(num > 0.0)
+        {
+          totalVelocity /= num;
+          totalVelocity = normalize(totalVelocity) * maxSpeed;
+          acc = totalVelocity - currentVel.xy;
+          if(length(acc) > maxForce)
+          {
+            acc = normalize(acc) * maxForce;
+          }
+        }
+        return acc;
+    }
+    
+    vec2 cohesion(vec4 currentPos, vec4 currentVel)
+    {
+         float d = 0.2;
+        vec2 totalVelocity = vec2(0);
+        vec2 acc = vec2(0);
+        float num = 0.0;
+    
+        for (float y = 0.0; y < scale.y; y++)
+        {
+          for (float x = 0.0; x < scale.x; x++) 
+          { 
+            vec2 neighborUV = vec2(x+0.5, y+0.5)/scale.xy;
+            vec4 neighborPos = texture( posTexture, neighborUV);
+            float distance = length(currentPos.xy - neighborPos.xy);
+            if(currentPos.xy!= neighborPos.xy && distance <= d)
+            {
+              totalVelocity += neighborPos.xy;
+              num++;
+            }
+          }
+        }
+                 
+        if(num > 0.0)
+        {
+          totalVelocity /= num;
+          totalVelocity = totalVelocity - currentPos.xy;
+          totalVelocity = normalize(totalVelocity) * maxSpeed;
+          acc = totalVelocity - currentVel.xy;
+          if(length(acc) > maxForce)
+          {
+            acc = normalize(acc) * maxForce;
+          }
+        }
+        return acc;
+    }
+    
+    
+    vec2 separation(vec4 currentPos, vec4 currentVel)
+    {
+        float d = 0.2;
+        vec2 totalVelocity = vec2(0);
+        vec2 acc = vec2(0);
+        float num = 0.0;
+        for (float y = 0.0; y < scale.y; y++)
+        {
+          for (float x = 0.0; x < scale.x; x++) 
+          { 
+            vec2 neighborUV = vec2(x+0.5, y+0.5)/scale.xy;
+            vec4 neighborPos = texture( posTexture, neighborUV);
+            float distance = length(currentPos.xy - neighborPos.xy);
+            if(currentPos.xy!= neighborPos.xy && distance <= d)
+            {
+              vec2 diff = currentPos.xy - neighborPos.xy;
+              diff = normalize(diff);
+              diff /= distance;
+              totalVelocity += diff;
+              num++;
+            }
+          }
+        }
+    
+        if(bmousePredator)
+          {
+            float distance = length(currentPos.xy - mousePos);
+            if(distance <= d)
+            {
+               vec2 diff = currentPos.xy - mousePos;
+                diff /= distance;
+                totalVelocity += diff * 100000.0;
+                num++;
+            }
+             
+          }
+    
+        if(num > 0.0)
+        {
+          totalVelocity /= num;
+          totalVelocity = normalize(totalVelocity) * maxSpeed;
+          acc = totalVelocity - currentVel.xy;
+          if(length(acc) > maxForce)
+          {
+            acc = normalize(acc) * maxForce;
+          }
+        }
+        return acc;
+    }
+    
+    void main() 
+    { 
+          vec2 uv = vec2(gl_FragCoord.xy)/ scale;
+          vec4 currentPos = texture( posTexture, uv);
+          vec4 currentVel = texture( velTexture, uv);
+    
+          vec2 acc;
+          acc += align(currentPos, currentVel) * alignmentScale;
+          acc += cohesion(currentPos, currentVel) * cohesionScale;
+          acc += separation(currentPos, currentVel) * separationScale;
+        
+        currentPos.xy += currentVel.xy;
+    
+    
+    
+        if(currentPos.x >= 1.0)
+        {
+          currentPos.x = -1.0;
+        }
+        else if(currentPos.x <= -1.0)
+        {
+          currentPos.x = 1.0;
+        }
+    
+        if(currentPos.y >= 1.0)
+        {
+          currentPos.y = -1.0;
+        }
+        else if(currentPos.y <= -1.0)
+        {
+          currentPos.y = 1.0;
+        }
+    
+    
+        currentVel.xy += acc;
+    
+        o_newPos = currentPos;
+        o_newVel = currentVel;
+        
+          
+      }
+  </script>
+  
+  <!-- vertex shader, as simple as possible -->
+  <script id='vs_render' type='x-shader/x-vertex'>#version 300 es
+    precision mediump float; 
+    in vec2 a_position;
+    out vec2 pos;
+    out vec2 vel;
+    uniform sampler2D posTexture;
+    uniform sampler2D velTexture;   
+
+    void main() { 
+      vec4 currentPos = texture( posTexture, a_position);
+      vec4 currentVel = texture( velTexture, a_position);  
+      gl_PointSize = 30.;
+      pos=currentPos.xy;
+      vel=currentVel.xy;
+      gl_Position = vec4(currentPos.xy, 0., 1.);
+    } 
+  </script>
+
+  <!-- fragment shader -->
+  <script id='fs_render' type='x-shader/x-fragment'>#version 300 es
+    precision mediump float;
+    
+    uniform float time;
+    uniform vec2 resolution;
+    in vec2 pos;
+    in vec2 vel;
+    out vec4 frag;
+    
+    mat2 rotate(vec2 velocity){
+      if(length(velocity)==0.){
+        return mat2(1,0,
+                    0,1);
+      }
+      else if(velocity.x==0.&&velocity.y>0.){
+        return mat2(1,0,
+                    0,1);
+      }
+      else if(velocity.x==0.&&velocity.y<0.){
+        return mat2(-1,0,
+                    0,-1);
+      }
+      else if(velocity.x<0.){
+        vec2 a=normalize(velocity);
+        float angle=acos(dot(a,vec2(0.,1.)));
+        return mat2(cos(angle),-sin(angle),
+                    sin(angle),cos(angle));
+      }      
+      else if(velocity.x>0.){
+        vec2 a=normalize(velocity);
+        float angle=acos(dot(a,vec2(0.,1.)));
+        return mat2(cos(angle),sin(angle),
+                    -sin(angle),cos(angle));
+      }
+
+    }
+
+    mat2 rotate2(vec2 velocity)
+    {
+
+      vec3 v = normalize(vec3(velocity, 0));
+      vec3 zDir = vec3(0,0,1.0);
+      vec3 right = normalize(cross(v, zDir));
+       
+      mat2 rotateMat =  mat2(right.x,right.y,
+            v.x,v.y);
+          return transpose(rotateMat);
+    }
+
+    float sdTriangleIsosceles( vec2 p, vec2 q )
+    {
+        p.x = abs(p.x);
+        vec2 a = p - q*clamp( dot(p,q)/dot(q,q), 0.0, 1.0 );
+        vec2 b = p - q*vec2( clamp( p.x/q.x, 0.0, 1.0 ), 1.0 );
+        float k = sign( q.y );
+        float d = min(dot( a, a ),dot(b, b));
+        float s = max( k*(p.x*q.y-p.y*q.x),k*(p.y-q.y)  );
+        return sqrt(d)*sign(s);
+    }
+ 
+    vec3 triangle(vec2 po, vec2 velocity){
+      vec2 p = gl_FragCoord.xy*2.-resolution.xy;
+      p.x/=resolution.x;
+      p.y/=resolution.y;
+      vec2 tri = vec2(0.016,-0.06); // width, height
+      vec2 i=p-po;
+//      i=rotate(velocity)*i;
+      i=rotate2(velocity)*i;
+
+      float d = sdTriangleIsosceles( i-vec2(0.,0.03), tri );
+
+      vec3 col = vec3(1.0) - sign(d);
+      return col;
+
+    }
+
+    void main() {
+      vec4 color=vec4(0.,0.,0.,0.);
+      if(length(vel)>0.008){
+        color+=vec4(triangle(pos,vel)*vec3(1.,0.,0.),1.);
+      }
+      else{
+        color+=vec4(triangle(pos,vel),1.);
+      }
+      frag = vec4(color);
+    }
+  </script>
+
+
+  <script type='text/javascript'>
+    // "global" variables
+    let gl, uTime, uPosTexture, uVelTexture, uPosTexture2, uVelTexture2, uMousePos, uSeparation, uAlignment, uCohesion, uPredator
+    let size=10 //texturesize
+    let mouseX=0,mouseY=0
+
+    window.onload = function() {
+      //UI
+      const PARAMS = {
+        Separation: 0.6,
+        Alignment: 0.6,
+        Cohesion: 0.6,
+        Predator: false,
+      };
+    
+      const pane = new Tweakpane();
+      pane.addInput(PARAMS, 'Separation', {
+        min: 0,
+        max: 3,
+      });
+      pane.addInput(PARAMS, 'Alignment', {
+        min: 0,
+        max: 3,
+      });
+      pane.addInput(PARAMS, 'Cohesion', {
+        min: 0,
+        max: 3,
+      });
+      pane.addInput(PARAMS, 'Predator');
+
+      const canvas = document.getElementById( 'gl' )
+      gl = canvas.getContext( 'webgl2' )
+
+      gl.getExtension("EXT_color_buffer_float")
+      canvas.width = window.innerWidth
+      canvas.height = window.innerHeight
+
+      // define drawing area of canvas. bottom corner, width / height
+      gl.viewport( 0,0,gl.drawingBufferWidth, gl.drawingBufferHeight )
+
+      // create a buffer object to store vertices
+      const buffer = gl.createBuffer()
+
+      // point buffer at graphic context's ARRAY_BUFFER
+      gl.bindBuffer( gl.ARRAY_BUFFER, buffer )
+
+      const triangles = new Float32Array([
+        -1, -1,
+        1,  -1,
+        -1, 1,
+        -1, 1,
+        1, -1,
+        1, 1
+      ])
+
+      // initialize memory for buffer and populate it. Give
+      // open gl hint contents will not change dynamically.
+      gl.bufferData( gl.ARRAY_BUFFER, triangles, gl.STATIC_DRAW )
+
+      // create vertex shader
+      let shaderScript = document.getElementById('vs_simulation')
+      let shaderSource = shaderScript.text
+      const vertexShader = gl.createShader( gl.VERTEX_SHADER )
+      gl.shaderSource( vertexShader, shaderSource )
+      gl.compileShader( vertexShader )
+
+      // create fragment shader
+      shaderScript = document.getElementById('fs_simulation')
+      shaderSource = shaderScript.text
+      const fragmentShaderSimulation = gl.createShader( gl.FRAGMENT_SHADER )
+      gl.shaderSource( fragmentShaderSimulation , shaderSource )
+      gl.compileShader( fragmentShaderSimulation  )
+
+      // create shader program
+      const programSimulation = gl.createProgram()
+      gl.attachShader( programSimulation, vertexShader )
+      gl.attachShader( programSimulation, fragmentShaderSimulation )
+      gl.linkProgram( programSimulation )
+      gl.useProgram( programSimulation )
+
+      uMousePos = gl.getUniformLocation( programSimulation, 'mousePos' )
+      uSeparation = gl.getUniformLocation( programSimulation, 'separationScale' )
+      uAlignment = gl.getUniformLocation( programSimulation, 'alignmentScale' )
+      uCohesion = gl.getUniformLocation( programSimulation, 'cohesionScale' )
+      uPredator = gl.getUniformLocation( programSimulation, 'bmousePredator' )
+      let scale = gl.getUniformLocation( programSimulation, 'scale' ) 
+      gl.uniform2f( scale, size, size )
+      uPosTexture = gl.getUniformLocation( programSimulation, 'posTexture' ) 
+      uVelTexture = gl.getUniformLocation( programSimulation, 'velTexture' ) 
+      // create pointer to vertex array and uniform sharing simulation size 
+      const position = gl.getAttribLocation( programSimulation, 'a_position' )
+      gl.enableVertexAttribArray( position ) 
+      gl.vertexAttribPointer( position, 2, gl.FLOAT, false, 0,0 ) 
+      
+      //create textures
+      let texPosFront = gl.createTexture() //xy for posistion
+      gl.bindTexture( gl.TEXTURE_2D, texPosFront ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST )
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST ) 
+      gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA32F, size, size, 0, gl.RGBA, gl.FLOAT, null ) 
+
+      let texVelFront = gl.createTexture()  //xy for velocity
+      gl.bindTexture( gl.TEXTURE_2D, texVelFront ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST )
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST ) 
+      gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA32F, size, size, 0, gl.RGBA, gl.FLOAT, null ) 
+    
+      let texPosBack = gl.createTexture() //xy for posistion
+      gl.bindTexture( gl.TEXTURE_2D, texPosBack ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST ) 
+      gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA32F, size, size, 0, gl.RGBA, gl.FLOAT, null )
+
+
+      var pixelSize = 4 
+      var initState = new Float32Array( size * size * pixelSize ) 
+      const reset = function(n) { 
+        for( let i = 0; i < size * size; i++ ) 
+        { 
+            let j = pixelSize * i;
+            
+            initState[ j ] = n * (Math.random() * 2 - 1);
+            initState[ j + 1] = n * (Math.random() * 2 - 1 );
+            initState[ j + 2] = 0 ;
+            initState[ j + 3] = 0 ;
+
+        } 
+        
+        gl.texSubImage2D( 
+          gl.TEXTURE_2D, 0, 0, 0, size, size, gl.RGBA, gl.FLOAT, initState, 0 
+        ) 
+        
+      }
+
+      reset(1) //initialize position texture
+
+      let texVelBack = gl.createTexture()  //xy for velocity
+      gl.bindTexture( gl.TEXTURE_2D, texVelBack ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST ) 
+      gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST ) 
+      gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGBA32F, size, size, 0, gl.RGBA, gl.FLOAT, null )
+
+      reset(0.005) ////initialize velocity texture
+
+      const fb = gl.createFramebuffer() 
+      const fb2 = gl.createFramebuffer() 
+  
+      const pingpong = function() {
+        gl.bindBuffer( gl.ARRAY_BUFFER, buffer )
+        gl.enableVertexAttribArray( position ) 
+        gl.vertexAttribPointer( position, 2, gl.FLOAT, false, 0,0 ) 
+
+        gl.bindFramebuffer( gl.FRAMEBUFFER, fb ) 
+        // use the framebuffer to write to our texFront texture
+        gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texPosFront, 0 ) 
+        gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, texVelFront, 0 ) 
+        gl.drawBuffers( [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1] );
+
+        gl.viewport(0, 0, size, size ) 
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture( gl.TEXTURE_2D, texPosBack ) 
+        gl.activeTexture(gl.TEXTURE1)
+        gl.bindTexture( gl.TEXTURE_2D, texVelBack )  // run shader 
+        gl.drawArrays( gl.TRIANGLES, 0, 6 ) 
+      
+        gl.bindFramebuffer( gl.FRAMEBUFFER, fb2 )
+        gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texPosBack, 0 ) 
+        gl.framebufferTexture2D( gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, texVelBack, 0 ) 
+        gl.drawBuffers( [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1] );
+
+        gl.viewport(0, 0, size, size )
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture( gl.TEXTURE_2D, texPosFront ) 
+        gl.activeTexture(gl.TEXTURE1)
+        gl.bindTexture( gl.TEXTURE_2D, texVelFront ) 
+        gl.drawArrays( gl.TRIANGLES, 0, 6 )  
+      }
+
+      //create render program
+      // create a buffer object to store vertice index
+      const buffer2 = gl.createBuffer()
+      // point buffer at graphic context's ARRAY_BUFFER
+      gl.bindBuffer( gl.ARRAY_BUFFER, buffer2 )
+      const index = new Float32Array( size*size * 2 )
+      for (let i = 0; i < size*2; i+=2) {
+        for (let j = 0; j < size; j++) {
+          index[i+j*size*2]=i/2/size
+          index[i+j*size*2+1]=j/size   
+        }     
+      }
+      console.log(index)
+      gl.bufferData( gl.ARRAY_BUFFER, index, gl.STATIC_DRAW )
+
+      // create vertex shader
+      shaderScript = document.getElementById('vs_render')
+      shaderSource = shaderScript.text
+      const vertexShaderRender = gl.createShader( gl.VERTEX_SHADER )
+      gl.shaderSource( vertexShaderRender, shaderSource )
+      gl.compileShader( vertexShaderRender )
+      console.log( gl.getShaderInfoLog( vertexShaderRender ) )
+      // create fragment shader
+      shaderScript = document.getElementById('fs_render')
+      shaderSource = shaderScript.text
+      const fragmentShaderRender = gl.createShader( gl.FRAGMENT_SHADER )
+      gl.shaderSource( fragmentShaderRender , shaderSource )
+      gl.compileShader( fragmentShaderRender  )
+      console.log( gl.getShaderInfoLog( fragmentShaderRender ) )
+      // create shader program
+      const programRender = gl.createProgram()
+      gl.attachShader( programRender, vertexShaderRender )
+      gl.attachShader( programRender, fragmentShaderRender )
+      gl.linkProgram( programRender )
+      gl.useProgram( programRender )
+
+      uPosTexture2 = gl.getUniformLocation( programRender, 'posTexture' )
+      uVelTexture2 = gl.getUniformLocation( programRender, 'velTexture' ) 
+      uTime = gl.getUniformLocation( programRender, 'time' ) 
+      const uRes = gl.getUniformLocation( programRender, 'resolution' )
+      gl.uniform2f( uRes, window.innerWidth, window.innerHeight )
+      const position2 = gl.getAttribLocation( programRender, 'a_position' )
+      gl.enableVertexAttribArray( position2 ) 
+      gl.vertexAttribPointer( position2, 2, gl.FLOAT, false, 0,0 ) 
+
+      let time = 0
+      let lastTime = 0;
+      let acumulateTime = 0;
+      const render = function() { 
+        window.requestAnimationFrame( render )
+
+        let now = Date.now();
+        acumulateTime +=  now - lastTime;
+        lastTime = now;
+        
+        let frameTime = 1.0 / 40 * 1000;
+        if(acumulateTime < frameTime)
+        {
+          return;
+        }
+        acumulateTime = 0;
+
+        gl.useProgram( programSimulation ) 
+        gl.uniform2f( uMousePos, mouseX, mouseY ) 
+        gl.uniform1f( uSeparation,  PARAMS.Separation)
+        gl.uniform1f( uAlignment, PARAMS.Alignment)
+        gl.uniform1f( uCohesion,PARAMS.Cohesion)
+        gl.uniform1i( uPredator, PARAMS.Predator )
+
+        gl.uniform1i(uPosTexture, 0) 
+        gl.uniform1i(uVelTexture, 1) 
+        pingpong()
+  
+        gl.useProgram( programRender ) 
+        time++
+        gl.uniform1f( uTime, time )
+        // use the default framebuffer object by passing null 
+        gl.bindFramebuffer( gl.FRAMEBUFFER, null ) 
+        gl.bindBuffer( gl.ARRAY_BUFFER, buffer2 )
+        gl.enableVertexAttribArray( position2 ) 
+        gl.vertexAttribPointer( position2, 2, gl.FLOAT, false, 0,0 ) 
+        // set our viewport to be the size of our canvas 
+        // so that it will fill it entirely 
+        gl.viewport(0, 0, canvas.width, canvas.height )
+        // select the texture we would like to draw the the screen. 
+        gl.uniform1i(uPosTexture2, 0)
+        gl.uniform1i(uVelTexture2, 1) 
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture( gl.TEXTURE_2D, texPosBack ) 
+        gl.activeTexture(gl.TEXTURE1)
+        gl.bindTexture( gl.TEXTURE_2D, texVelBack ) 
+
+        gl.enable(gl.BLEND);
+		    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.clearColor(0,0,0,1)
+        gl.clear(gl.COLOR_BUFFER_BIT)
+        // put simulation on screen
+        gl.drawArrays( gl.POINTS, 0, size*size ) 
+        gl.disable(gl.BLEND);
+      }
+     
+      render()
+
+      const onMouseMove = function(event) 
+      {
+        mouseX=event.clientX/canvas.width*2.0-1.0
+        mouseY=(canvas.height-event.clientY)/canvas.height*2.0-1.0
+      }
+      canvas.onmousemove  = onMouseMove
+    }
+  </script>
+
+</html>

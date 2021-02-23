@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang='en'>
+  <head>
+    <style>body{ margin:0 }</style>
+  </head>
+  <body>
+    <canvas id='gl'></canvas>
+  </body>
+  <!-- vertex shader, as simple as possible -->
+  <script id='vertex' type='x-shader/x-vertex'>
+    attribute vec2 a_position;
+
+    void main() {
+      gl_Position = vec4( a_position, 0., 1. );
+    }
+  </script>
+
+  <!-- fragment shader -->
+  <script id='fragment' type='x-shader/x-fragment'>
+    #ifdef GL_ES
+    precision mediump float;
+    #endif
+    
+    uniform mediump float time;
+    uniform mediump vec2 resolution;
+    uniform int mode;
+    uniform mediump float brightness;
+    uniform bool isInverted;
+    
+    // GLSL gives us this for free... our first sampler2D automatically
+    // points to our first bound texture.
+    uniform sampler2D uSampler;
+    
+    vec4 Squarewave(vec2 st){
+      float p=sin(st.x*80.+0.01*time);
+      p=step(0., p);
+      return vec4(vec3(p), 1.);
+    }
+
+    vec4 Trianglewave(vec2 st){
+      float p=abs(mod((st.x*80.+0.01*time)/3.14, 2.)-1.);
+      return vec4(vec3(p), 1.);
+    }
+
+    void main() {
+      vec2 st=vec2(gl_FragCoord.xy/resolution.xy);
+      vec4 color=texture2D(uSampler, st);
+
+      if(mode==1){
+        //Sine oscillators
+        color*=vec4(vec3(sin(st.x*80.+0.01*time)),1.);
+      }
+      else if(mode==2){
+        //Square wave
+        color*=Squarewave(st);
+      }
+      else if(mode==3){
+        //Triangle wave
+        color*=Trianglewave(st);
+      }
+      else if(mode==4){
+        //Triangle wave and vertical Sine
+      //  color*=Trianglewave(st)*vec4(vec3(sin(st.y*80.+0.01*time)),1.);
+      color*=Trianglewave(st)*vec4(vec3(abs(mod((st.y*80.+0.01*time)/3.14, 2.)-1.)),1.);
+      }
+      else if(mode==5){
+        //RGB control
+        color.r*=abs(mod((st.x*80.+0.01*time)/3.14, 2.)-1.)*sin(st.y*80.+0.01*time);
+        color.b*=sin(st.x*80.+0.01*time);
+      }
+      if(isInverted){
+        color.rgb=vec3(1)-color.rgb;
+      }
+      color*=vec4(vec3(brightness),1.);
+      gl_FragColor = vec4(color.rgb,1.);
+    }
+  </script>
+
+
+  <script type='text/javascript'>
+    // "global" variables
+    let gl, uTime,video,texture,textureLoaded
+
+
+
+    window.onload = function() {
+      const canvas = document.getElementById( 'gl' )
+      gl = canvas.getContext( 'webgl' )
+      canvas.width = window.innerWidth
+      canvas.height = window.innerHeight
+
+
+      // define drawing area of canvas. bottom corner, width / height
+      gl.viewport( 0,0,gl.drawingBufferWidth, gl.drawingBufferHeight )
+
+      // create a buffer object to store vertices
+      const buffer = gl.createBuffer()
+
+      // point buffer at graphic context's ARRAY_BUFFER
+      gl.bindBuffer( gl.ARRAY_BUFFER, buffer )
+
+      const triangles = new Float32Array([
+        -1, -1,
+        1,  -1,
+        -1, 1,
+        -1, 1,
+        1, -1,
+        1, 1
+      ])
+
+      // initialize memory for buffer and populate it. Give
+      // open gl hint contents will not change dynamically.
+      gl.bufferData( gl.ARRAY_BUFFER, triangles, gl.STATIC_DRAW )
+
+      // create vertex shader
+      let shaderScript = document.getElementById('vertex')
+      let shaderSource = shaderScript.text
+      const vertexShader = gl.createShader( gl.VERTEX_SHADER )
+      gl.shaderSource( vertexShader, shaderSource );
+      gl.compileShader( vertexShader )
+
+      // create fragment shader
+      shaderScript = document.getElementById('fragment')
+      shaderSource = shaderScript.text
+      const fragmentShader = gl.createShader( gl.FRAGMENT_SHADER )
+      gl.shaderSource( fragmentShader, shaderSource );
+      gl.compileShader( fragmentShader )
+
+      // create shader program
+      const program = gl.createProgram()
+      gl.attachShader( program, vertexShader )
+      gl.attachShader( program, fragmentShader )
+      gl.linkProgram( program )
+      gl.useProgram( program )
+      
+      /* ALL ATTRIBUTE/UNIFORM INITIALIZATION MUST COME AFTER 
+      CREATING/LINKING/USING THE SHADER PROGAM */
+      
+      // find a pointer to the uniform "time" in our fragment shader
+      uTime = gl.getUniformLocation( program, 'time' ) 
+      uMode = gl.getUniformLocation( program, 'mode' ) 
+      uBrightness = gl.getUniformLocation( program, 'brightness' )
+      uIsInverted = gl.getUniformLocation( program, 'isInverted' )
+
+      const uRes = gl.getUniformLocation( program, 'resolution' )
+      gl.uniform2f( uRes, gl.drawingBufferWidth, gl.drawingBufferHeight )
+
+      // get position attribute location in shader
+      const position = gl.getAttribLocation( program, 'a_position' )
+      // enable the attribute
+      gl.enableVertexAttribArray( position )
+      // this will point to the vertices in the last bound array buffer.
+      // In this example, we only use one array buffer, where we're storing 
+      // our vertices
+      gl.vertexAttribPointer( position, 2, gl.FLOAT, false, 0,0 )
+
+      document.onkeypress=keyHandler
+      getVideo()
+      render()
+    }
+
+    function keyHandler(event) {
+      switch (String.fromCharCode(event.keyCode)) {
+        case '1':
+          mode=1;
+          break;
+        case '2':
+          mode=2;
+          break; 
+        case '3':
+          mode=3;
+          break;
+        case '4':
+          mode=4;
+          break; 
+        case '5':
+          mode=5;
+          break; 
+        case 'q':
+          brightness-=.1;
+          if (brightness<0.) {
+            brightness=0.;
+          }
+          break;
+        case 'w':
+          brightness+=.1;
+          if (brightness>5.) {
+            brightness=5.
+          }
+          break; 
+        case 'e':
+          brightness-=.1;
+          isInverted=!isInverted;
+          break;        
+        default:
+          break;
+      }
+    }
+
+    function getVideo() {
+  video = document.createElement( 'video' )
+
+  navigator.mediaDevices.getUserMedia({
+    video:true
+  }).then( stream => { 
+    video.srcObject = stream
+    video.play()
+    makeTexture()
+  }) 
+    
+  return video
+}
+
+    function makeTexture() {
+  // create an OpenGL texture object
+  texture = gl.createTexture()
+  
+  // this tells OpenGL which texture object to use for subsequent operations
+  gl.bindTexture( gl.TEXTURE_2D, texture )
+    
+  // since canvas draws from the top and shaders draw from the bottom, we
+  // have to flip our canvas when using it as a shader.
+  gl.pixelStorei( gl.UNPACK_FLIP_Y_WEBGL, true )
+
+  // how to map when texture element is more than one pixel
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR )
+  // how to map when texture element is less than one pixel
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR )
+  
+  // you must have these properties defined for the video texture to
+  // work correctly
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE )
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE )
+  
+  // let our render loop know when the texture is ready
+  textureLoaded = true
+}
+
+    // keep track of time via incremental frame counter
+let time = 0
+let mode = 0
+let brightness = 1
+let isInverted = false
+render = function() {
+  // schedules render to be called the next time the video card requests 
+  // a frame of video
+  window.requestAnimationFrame( render )
+  
+  // check to see if video is playing and the texture has been created
+  if( textureLoaded === true ) {
+    // send texture data to GPU    
+    gl.texImage2D( 
+      gl.TEXTURE_2D,    // target: you will always want gl.TEXTURE_2D
+      0,                // level of detail: 0 is the base
+      gl.RGBA, gl.RGBA, // color formats
+      gl.UNSIGNED_BYTE, // type: the type of texture data; 0-255
+      video             // pixel source: could also be video or image
+    )
+    
+    // draw triangles using the array buffer from index 0 to 6 (6 is count)
+    gl.drawArrays( gl.TRIANGLES, 0, 6 )
+  }
+  
+  // update time on CPU and GPU
+  time++
+  gl.uniform1f( uTime, time )
+  gl.uniform1i( uMode, mode )
+  gl.uniform1f( uBrightness, brightness )
+  gl.uniform1i( uIsInverted, isInverted )
+}
+  </script>
+
+</html>
