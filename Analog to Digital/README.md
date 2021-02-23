@@ -1,4 +1,5 @@
 # **Instructions**
+Video: https://youtu.be/nqieVqM0ZQo  
 URL: https://vakarian15.github.io/Graphical-Simulation-of-Physical-Systems/Analog%20to%20Digital/main.html
 * press "1": activate the Sine oscillators for modulation
 * press "2": activate the Square wave oscillator for modulation
