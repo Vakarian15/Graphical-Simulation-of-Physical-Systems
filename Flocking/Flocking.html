@@ -218,7 +218,7 @@
     void main() { 
       vec4 currentPos = texture( posTexture, a_position);
       vec4 currentVel = texture( velTexture, a_position);  
-      gl_PointSize = 30.;
+      gl_PointSize = 50.;
       pos=currentPos.xy;
       vel=currentVel.xy;
       gl_Position = vec4(currentPos.xy, 0., 1.);
@@ -286,7 +286,7 @@
         return sqrt(d)*sign(s);
     }
  
-    vec3 triangle(vec2 po, vec2 velocity){
+    vec4 triangle(vec2 po, vec2 velocity){
       vec2 p = gl_FragCoord.xy*2.-resolution.xy;
       p.x/=resolution.x;
       p.y/=resolution.y;
@@ -297,20 +297,19 @@
 
       float d = sdTriangleIsosceles( i-vec2(0.,0.03), tri );
 
-      vec3 col = vec3(1.0) - sign(d);
+      vec4 col = vec4(1.0) - sign(d);
       return col;
-
     }
 
     void main() {
       vec4 color=vec4(0.,0.,0.,0.);
       if(length(vel)>0.008){
-        color+=vec4(triangle(pos,vel)*vec3(1.,0.,0.),1.);
+        color=triangle(pos,vel)*vec4(1.,0.,0.,1.);
       }
       else{
-        color+=vec4(triangle(pos,vel),1.);
+        color=triangle(pos,vel);
       }
-      frag = vec4(color);
+      frag = color;
     }
   </script>
 
